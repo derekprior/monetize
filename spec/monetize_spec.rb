@@ -35,7 +35,7 @@ describe Monetize do
         end
 
         it 'should assume default currency if not a recognised symbol' do
-          expect(Monetize.parse("L9.99")).to eq Money.new(999, 'USD')
+          expect(Monetize.parse("L9.99")).to eq Money.new(999, "USD")
         end
       end
       context 'opted out' do
@@ -43,10 +43,10 @@ describe Monetize do
           Money.assume_from_symbol = false
         end
         it "parses formatted inputs with the currency passed as a symbol but ignores the symbol" do
-          expect(Monetize.parse("$5.95")).to eq Money.new(595, 'USD')
-          expect(Monetize.parse("€5.95")).to eq Money.new(595, 'USD')
-          expect(Monetize.parse(" €5.95 ")).to eq Money.new(595, 'USD')
-          expect(Monetize.parse("£9.99")).to eq Money.new(999, 'USD')
+          expect(Monetize.parse("$5.95")).to eq Money.new(595, "USD")
+          expect(Monetize.parse("€5.95")).to eq Money.new(595, "USD")
+          expect(Monetize.parse(" €5.95 ")).to eq Money.new(595, "USD")
+          expect(Monetize.parse("£9.99")).to eq Money.new(999, "USD")
 
         end
       end
@@ -56,7 +56,7 @@ describe Monetize do
     end
 
     it "parses USD-formatted inputs under $10" do
-      five_ninety_five = Money.new(595, 'USD')
+      five_ninety_five = Money.new(595, "USD")
 
       expect(Monetize.parse(5.95)).to eq five_ninety_five
       expect(Monetize.parse('5.95')).to eq five_ninety_five
@@ -68,8 +68,8 @@ describe Monetize do
     end
 
     it "parses USD-formatted inputs with multiple thousands-seperators" do
-      expect(Monetize.parse('1,234,567.89')).to eq Money.new(123456789, 'USD')
-      expect(Monetize.parse('1,111,234,567.89')).to eq Money.new(111123456789, 'USD')
+      expect(Monetize.parse('1,234,567.89')).to eq Money.new(123456789, "USD")
+      expect(Monetize.parse('1,111,234,567.89')).to eq Money.new(111123456789, "USD")
     end
 
     it "does not return a price if there is a price range" do
@@ -85,7 +85,7 @@ describe Monetize do
     end
 
     it "handles negative inputs" do
-      five_ninety_five = Money.new(-595, 'USD')
+      five_ninety_five = Money.new(-595, "USD")
 
       expect(Monetize.parse("$-5.95")).to eq five_ninety_five
       expect(Monetize.parse("-$5.95")).to eq five_ninety_five
@@ -98,6 +98,7 @@ describe Monetize do
 
     it "parses correctly strings with exactly 3 decimal digits" do
       expect(Monetize.parse("6,534", "EUR")).to eq Money.new(653, "EUR")
+      expect(Monetize.parse("6,535", "EUR")).to eq Money.new(654, "EUR")
     end
 
     context "custom currencies with 4 decimal places" do
@@ -312,8 +313,62 @@ describe Monetize do
   end
 
   describe ".extract_cents" do
+    def usd
+      Money::Currency.wrap("USD")
+    end
+
     it "correctly treats pipe marks '|' in input (regression test)" do
       expect(Monetize.extract_cents('100|0')).to eq Monetize.extract_cents('100!0')
+    end
+
+    it "rounds cents properly" do
+      expect(Monetize.extract_cents('100.0', usd)).to eq 10000
+      expect(Monetize.extract_cents('100.', usd)).to eq 10000
+      expect(Monetize.extract_cents('100.005', usd)).to eq 10001
+      expect(Monetize.extract_cents('100.004', usd)).to eq 10000
+    end
+
+    it "ignores non-currency-value characters" do
+      expect(Monetize.extract_cents('USD 100.00 EUR', usd)).to eq 10000
+      expect(Monetize.extract_cents('10USD0.00', usd)).to eq 10000
+    end
+
+    it "correctly handles negative numbers" do
+      expect(Monetize.extract_cents('-100.00', usd)).to eq(-10000)
+      expect(Monetize.extract_cents('100.00-', usd)).to eq(-10000)
+      expect { Monetize.extract_cents('100-00', usd) }.to raise_error(ArgumentError)
+    end
+
+    it "handles trailing separator/delimiter" do
+      expect(Monetize.extract_cents('100.00.', usd)).to eq(10000)
+      expect(Monetize.extract_cents('10000.', usd)).to eq(1000000)
+    end
+
+    it "handles no delimiters" do
+      expect(Monetize.extract_cents('10000', usd)).to eq(1000000)
+    end
+
+    it "handles two unique delimiters" do
+      expect(Monetize.extract_cents('100,000.00', usd)).to eq(10000000)
+      expect(Monetize.extract_cents('100.000,00', usd)).to eq(10000000)
+      expect(Monetize.extract_cents('1,00,000,00.00', usd)).to eq(1000000000)
+    end
+
+    it "handles a single unique delimiter which matches currency delimiter" do
+      expect(Monetize.extract_cents('100.00', usd)).to eq 10000
+    end
+
+    it "handles a single unique delimiter which does not match currency delimiter" do
+      expect(Monetize.extract_cents('100,00,00', usd)).to eq 100000000
+      expect(Monetize.extract_cents('1000,000', usd)).to eq 100000
+      expect(Monetize.extract_cents('100,000', usd)).to eq 10000000
+      expect(Monetize.extract_cents('10,000', usd)).to eq 1000000
+      expect(Monetize.extract_cents('10.00', Money::Currency.wrap('EUR'))).to eq 1000
+    end
+
+    it "handles null input" do
+      # expect { Monetize.extract_cents(nil, usd) }.to raise_error(ArgumentError)
+      expect(Monetize.extract_cents('', usd)).to eq(0)
     end
   end
 

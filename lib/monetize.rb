@@ -2,6 +2,7 @@
 
 require "money"
 require "monetize/version"
+require "monetize/cent_extractor"
 
 module Monetize
   def self.parse(input, currency = Money.default_currency)
@@ -60,78 +61,6 @@ module Monetize
   end
 
   def self.extract_cents(input, currency = Money.default_currency)
-    num = input.gsub(/[^\d.,'-]/, '')
-
-    negative = num =~ /^-|-$/ ? true : false
-
-    decimal_char = currency.decimal_mark
-
-    num = num.sub(/^-|-$/, '') if negative
-
-    if num.include?('-')
-      raise ArgumentError, "Invalid currency amount (hyphen)"
-    end
-
-    num.chop! if num.match(/[\.|,]$/)
-
-    used_delimiters = num.scan(/[^\d]/)
-
-    case used_delimiters.uniq.length
-    when 0
-      major, minor = num, 0
-    when 2
-      thousands_separator, decimal_mark = used_delimiters.uniq
-
-      major, minor = num.gsub(thousands_separator, '').split(decimal_mark)
-      min = 0 unless min
-    when 1
-      decimal_mark = used_delimiters.first
-
-      if decimal_char == decimal_mark
-        major, minor = num.split(decimal_char)
-      else
-        if num.scan(decimal_mark).length > 1 # multiple matches; treat as decimal_mark
-          major, minor = num.gsub(decimal_mark, ''), 0
-        else
-          possible_major, possible_minor = num.split(decimal_mark)
-          possible_major ||= "0"
-          possible_minor ||= "00"
-
-          if possible_minor.length != 3 # thousands_separator
-            major, minor = possible_major, possible_minor
-          else
-            if possible_major.length > 3
-              major, minor = possible_major, possible_minor
-            else
-              if decimal_mark == '.'
-                major, minor = possible_major, possible_minor
-              else
-                major, minor = "#{possible_major}#{possible_minor}", 0
-              end
-            end
-          end
-        end
-      end
-    else
-      raise ArgumentError, "Invalid currency amount"
-    end
-
-    cents = major.to_i * currency.subunit_to_unit
-    minor = minor.to_s
-    minor = if minor.size < currency.decimal_places
-              (minor + ("0" * currency.decimal_places))[0,currency.decimal_places].to_i
-            elsif minor.size > currency.decimal_places
-              if minor[currency.decimal_places,1].to_i >= 5
-                minor[0,currency.decimal_places].to_i+1
-              else
-                minor[0,currency.decimal_places].to_i
-              end
-            else
-              minor.to_i
-            end
-
-    cents += minor
-
-    negative ? cents * -1 : cents
+    CentExtractor.new(input, currency).extract
   end
 end
