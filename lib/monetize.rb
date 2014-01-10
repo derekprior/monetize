@@ -61,6 +61,6 @@ module Monetize
   end
 
   def self.extract_cents(input, currency = Money.default_currency)
-    CentExtractor.new(input, currency).extract
+    CentExtractor.new(input, currency).to_cents
   end
 end

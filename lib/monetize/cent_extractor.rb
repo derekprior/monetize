@@ -1,19 +1,74 @@
 module Monetize
   class CentExtractor
     def initialize(input, currency)
-      @input = input
+      @value_string = input.gsub(/[^\d.,'-]/, '')
       @currency = currency
+
+      if value_string =~ /^-|-$/
+        @is_negative = true
+        value_string.sub!('-','')
+      end
+
+      if value_string.match(/[\.|,]$/)
+        value_string.chop!
+      end
+
+      @used_delimiters = value_string.scan(/[^\d]/)
     end
 
-    def extract
-      num = currency_value
+    def to_cents
+      cents = major_cents + minor_cents
+
+      # Where??
+      if negative?
+        cents * -1
+      else
+        cents
+      end
+    end
+
+    def major_cents
+      major_part.to_i * currency.subunit_to_unit
+    end
+
+    def minor_cents
+      #minor = minor.to_s
+      minor = minor_part
+      if minor.size < currency.decimal_places
+        # 5
+        # 500
+        # 50
+        (minor + ("0" * currency.decimal_places))[0,currency.decimal_places].to_i
+      elsif minor.size > currency.decimal_places
+        # roudning cents
+        if minor[currency.decimal_places,1].to_i >= 5
+          minor[0,currency.decimal_places].to_i+1
+        else
+          minor[0,currency.decimal_places].to_i
+        end
+      else
+        minor.to_i
+      end
+    end
+
+    def major_part
+      parts[0]
+    end
+
+    def minor_part
+      parts[1]
+    end
+
+    def parts
+      @parts ||= parse
+    end
+
+    def parse
+      num = value_string
 
       if num.include?('-')
         raise ArgumentError, "Invalid currency amount (hyphen)"
       end
-
-      # finds non digits and calls them delimiters (assume . ,)
-      used_delimiters = num.scan(/[^\d]/)
 
       case used_delimiters.uniq.length
       when 0
@@ -26,46 +81,16 @@ module Monetize
         raise ArgumentError, "Invalid currency amount"
       end
 
-      cents = major.to_i * currency.subunit_to_unit
-      minor = minor.to_s
-      minor = if minor.size < currency.decimal_places
-                # 5
-                # 500
-                # 50
-                (minor + ("0" * currency.decimal_places))[0,currency.decimal_places].to_i
-              elsif minor.size > currency.decimal_places
-                # roudning cents
-                if minor[currency.decimal_places,1].to_i >= 5
-                  minor[0,currency.decimal_places].to_i+1
-                else
-                  minor[0,currency.decimal_places].to_i
-                end
-              else
-                minor.to_i
-              end
+      [ major, minor ]
 
-      cents += minor
-
-      negative ? cents * -1 : cents
     end
 
     private
 
-    attr_reader :input, :currency, :negative
+    attr_reader :value_string, :currency, :used_delimiters
 
-    def currency_value
-      value_string = input.gsub(/[^\d.,'-]/, '')
-
-      if value_string =~ /^-|-$/
-        @negative = true
-        value_string.sub!('-','')
-      end
-
-      if value_string.match(/[\.|,]$/)
-        value_string.chop!
-      end
-
-      value_string
+    def negative?
+      @is_negative
     end
 
     def currency_decimal_mark
@@ -73,7 +98,7 @@ module Monetize
     end
 
     def parse_with_no_delimiters(value_string)
-      [ value_string, 0 ]
+      [ value_string, "0" ]
     end
 
     def parse_with_two_delimiters(value_string, used_delimiters)
@@ -90,7 +115,7 @@ module Monetize
       else
         if value_string.scan(decimal_mark).length > 1
           # assume thousands sep
-          [ value_string.gsub(decimal_mark, ''), 0 ]
+          [ value_string.gsub(decimal_mark, ''), "0" ]
         else
           # unexpected delimeter, but appear once
           possible_major, possible_minor = value_string.split(decimal_mark)
@@ -116,7 +141,7 @@ module Monetize
               else
 
                 # the whole thing is the major - use it all
-                [ "#{possible_major}#{possible_minor}", 0 ]
+                [ "#{possible_major}#{possible_minor}", "0" ]
               end
             end
           end
