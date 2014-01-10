@@ -6,84 +6,22 @@ module Monetize
     end
 
     def extract
-      # extract method: removes currencies/non-value stuff
-      num = input.gsub(/[^\d.,'-]/, '')
-
-      # checking to see if it's negative
-      negative = num =~ /^-|-$/ ? true : false
-
-      # what is the decimal character for current currency
-      decimal_char = currency.decimal_mark
-
-      # redundancy - removes the negative.
-      num = num.sub(/^-|-$/, '') if negative
+      num = currency_value
 
       if num.include?('-')
         raise ArgumentError, "Invalid currency amount (hyphen)"
       end
-
-      # removes ending characters that are... problematic?
-      num.chop! if num.match(/[\.|,]$/)
 
       # finds non digits and calls them delimiters (assume . ,)
       used_delimiters = num.scan(/[^\d]/)
 
       case used_delimiters.uniq.length
       when 0
-        major, minor = num, 0
-      when 2
-        thousands_separator, decimal_mark = used_delimiters.uniq
-
-        major, minor = num.gsub(thousands_separator, '').split(decimal_mark)
-        min = 0 unless min
+        major, minor = parse_with_no_delimiters(num)
       when 1
-        decimal_mark = used_delimiters.first
-
-        # Does the parsed decimal mark the currency dec mark?
-        if decimal_char == decimal_mark
-          major, minor = num.split(decimal_char)
-        else
-          # did they mean thousands sep??
-
-          # this comment is a lie??
-          if num.scan(decimal_mark).length > 1 # multiple matches; treat as decimal_mark
-            # assume thousands sep
-            major, minor = num.gsub(decimal_mark, ''), 0
-          else
-
-            # unexpected delimeter, but appear once
-            possible_major, possible_minor = num.split(decimal_mark)
-            possible_major ||= "0"
-            possible_minor ||= "00"
-
-            # how long is the possible minor string?
-            if possible_minor.length != 3 # thousands_separator
-
-              # 100,00 for example - go with the parsed string
-              major, minor = possible_major, possible_minor
-            else
-              if possible_major.length > 3
-                # the 100000,00
-                # must be a decimal sep so we use the parsed strings
-                major, minor = possible_major, possible_minor
-              else
-
-                # less than or eq to three
-                # 10,000
-                # 100,000 for example (major!)
-                if decimal_mark == '.'
-
-                  # assume delim is the decimal point
-                  major, minor = possible_major, possible_minor
-                else
-
-                  # the whole thing is the major - use it all
-                  major, minor = "#{possible_major}#{possible_minor}", 0
-                end
-              end
-            end
-          end
-        end
+        major, minor = parse_with_one_delimiter(num, used_delimiters)
+      when 2
+        major, minor = parse_with_two_delimiters(num, used_delimiters)
       else
         raise ArgumentError, "Invalid currency amount"
       end
@@ -113,6 +51,77 @@ module Monetize
 
     private
 
-    attr_reader :input, :currency
+    attr_reader :input, :currency, :negative
+
+    def currency_value
+      value_string = input.gsub(/[^\d.,'-]/, '')
+
+      if value_string =~ /^-|-$/
+        @negative = true
+        value_string.sub!('-','')
+      end
+
+      if value_string.match(/[\.|,]$/)
+        value_string.chop!
+      end
+
+      value_string
+    end
+
+    def currency_decimal_mark
+      currency.decimal_mark
+    end
+
+    def parse_with_no_delimiters(value_string)
+      [ value_string, 0 ]
+    end
+
+    def parse_with_two_delimiters(value_string, used_delimiters)
+      thousands_separator, decimal_mark = used_delimiters.uniq
+      value_string.gsub(thousands_separator, '').split(decimal_mark)
+    end
+
+    def parse_with_one_delimiter(value_string, used_delimiters)
+      decimal_mark = used_delimiters.first
+
+      # Does the parsed decimal mark the currency dec mark?
+      if currency_decimal_mark == decimal_mark
+        value_string.split(currency_decimal_mark)
+      else
+        if value_string.scan(decimal_mark).length > 1
+          # assume thousands sep
+          [ value_string.gsub(decimal_mark, ''), 0 ]
+        else
+          # unexpected delimeter, but appear once
+          possible_major, possible_minor = value_string.split(decimal_mark)
+          possible_major ||= "0"
+          possible_minor ||= "00"
+
+          # how long is the possible minor string?
+          if possible_minor.length != 3 # thousands_separator
+
+            # 100,00 for example - go with the parsed string
+            [ possible_major, possible_minor ]
+          else
+            if possible_major.length > 3
+              # the 100000,00
+              # must be a decimal sep so we use the parsed strings
+              [ possible_major, possible_minor ]
+            else
+              # less than or eq to three
+              if decimal_mark == '.'
+
+                # assume delim is the decimal point
+                [ possible_major, possible_minor ]
+              else
+
+                # the whole thing is the major - use it all
+                [ "#{possible_major}#{possible_minor}", 0 ]
+              end
+            end
+          end
+        end
+      end
+    end
   end
 end
